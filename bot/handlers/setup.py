@@ -89,7 +89,7 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
 
-ASK_NAME, ASK_DOB, ASK_TIMEZONE, ASK_NUM_NAPS, ASK_WAKE_WINDOW, ASK_NAP_DURATION = range(6)
+ASK_NAME, ASK_DOB, ASK_TIMEZONE, ASK_NUM_NAPS, ASK_WAKE_WINDOW, ASK_NAP_DURATION, ASK_NEW_TIMEZONE = range(7)
 
 _BUTTON_FILTER = filters.Regex(r"^(📅 Schedule|⚙️ Setup|😴 Slept|🌅 Woke up)$")
 
@@ -147,8 +147,8 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     context.user_data["setup"]["dob"] = dob.isoformat()
     await update.message.reply_text(
-        "What's your UTC offset? Press Enter to use the default `+2` (Kyiv).\n"
-        "e.g. `+2`, `-5` (Eastern US), `+5:30` (India)",
+        "What's your UTC offset? Type `y` for default `+3`.\n"
+        "e.g. `+3`, `-5` (Eastern US), `+5:30` (India)",
         parse_mode="Markdown",
     )
     return ASK_TIMEZONE
@@ -156,13 +156,13 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def receive_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
-    if text == "":
-        offset = 120  # default: UTC+2 Kyiv
+    if text.lower() == "y":
+        offset = 180  # default: UTC+3
     else:
         offset = _parse_utc_offset(text)
     if offset is None:
         await update.message.reply_text(
-            "Couldn't parse that. Try `+2`, `-5`, or `+5:30`. Press Enter for default `+2`.",
+            "Couldn't parse that. Try `+3`, `-5`, or `+5:30`. Type `y` for default `+3`.",
             parse_mode="Markdown",
         )
         return ASK_TIMEZONE
@@ -188,7 +188,7 @@ async def receive_num_naps(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     await update.message.reply_text(
         f"How long is *{setup['name']}* awake before Nap 1?\n"
-        "e.g. `2h10m` or `130` (minutes). Press Enter for default `170m`.",
+        "e.g. `2h10m` or `130` (minutes). Type `y` for default `170m`.",
         parse_mode="Markdown",
     )
     return ASK_WAKE_WINDOW
@@ -196,10 +196,10 @@ async def receive_num_naps(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def receive_wake_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
-    mins = 170 if text == "" else _parse_duration(text)
+    mins = 170 if text.lower() == "y" else _parse_duration(text)
     if not mins or mins <= 0:
         await update.message.reply_text(
-            "Couldn't parse that. Try `2h10m`, `2h`, or `130`. Press Enter for default `170m`.",
+            "Couldn't parse that. Try `2h10m`, `2h`, or `130`. Type `y` for default `170m`.",
             parse_mode="Markdown",
         )
         return ASK_WAKE_WINDOW
@@ -213,7 +213,7 @@ async def receive_wake_window(update: Update, context: ContextTypes.DEFAULT_TYPE
     if len(setup["wake_windows"]) <= num_naps:
         await update.message.reply_text(
             f"How long is *{name}'s* Nap {current_nap}?\n"
-            "e.g. `1h` or `60` (minutes). Press Enter for default `60m`.",
+            "e.g. `1h` or `60` (minutes). Type `y` for default `60m`.",
             parse_mode="Markdown",
         )
         return ASK_NAP_DURATION
@@ -223,10 +223,10 @@ async def receive_wake_window(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def receive_nap_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
-    mins = 60 if text == "" else _parse_duration(text)
+    mins = 60 if text.lower() == "y" else _parse_duration(text)
     if not mins or mins <= 0:
         await update.message.reply_text(
-            "Couldn't parse that. Try `1h` or `60`. Press Enter for default `60m`.",
+            "Couldn't parse that. Try `1h` or `60`. Type `y` for default `60m`.",
             parse_mode="Markdown",
         )
         return ASK_NAP_DURATION
@@ -244,7 +244,7 @@ async def receive_nap_duration(update: Update, context: ContextTypes.DEFAULT_TYP
         else f"How long is *{name}* awake before night sleep?"
     )
     await update.message.reply_text(
-        f"{prompt}\ne.g. `2h50m` or `170` (minutes). Press Enter for default `170m`.",
+        f"{prompt}\ne.g. `2h50m` or `170` (minutes). Type `y` for default `170m`.",
         parse_mode="Markdown",
     )
     return ASK_WAKE_WINDOW
@@ -289,6 +289,57 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop("setup", None)
     await update.message.reply_text("Setup cancelled.", reply_markup=MAIN_KEYBOARD)
     return ConversationHandler.END
+
+
+async def cmd_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async with AsyncSessionLocal() as db:
+        profile = await repository.get_baby_profile(db, update.effective_user.id)
+
+    current = f" Current: {_fmt_offset(profile.utc_offset)}." if profile else ""
+    await update.message.reply_text(
+        f"Enter your UTC offset.{current}\n"
+        "e.g. `+3`, `-5`, `+5:30`. Type `y` for default `+3`.",
+        parse_mode="Markdown",
+    )
+    return ASK_NEW_TIMEZONE
+
+
+async def receive_new_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+    offset = 180 if text.lower() == "y" else _parse_utc_offset(text)
+    if offset is None:
+        await update.message.reply_text(
+            "Couldn't parse that. Try `+3`, `-5`, or `+5:30`. Type `y` for default `+3`.",
+            parse_mode="Markdown",
+        )
+        return ASK_NEW_TIMEZONE
+
+    async with AsyncSessionLocal() as db:
+        saved = await repository.update_utc_offset(db, update.effective_user.id, offset)
+
+    if saved:
+        await update.message.reply_text(
+            f"✅ Timezone updated to *{_fmt_offset(offset)}*.",
+            parse_mode="Markdown",
+            reply_markup=MAIN_KEYBOARD,
+        )
+    else:
+        await update.message.reply_text(
+            "No profile found. Use /setup to create one first.",
+            reply_markup=MAIN_KEYBOARD,
+        )
+    return ConversationHandler.END
+
+
+def timezone_conv_handler() -> ConversationHandler:
+    text_only = filters.TEXT & ~filters.COMMAND & ~_BUTTON_FILTER
+    return ConversationHandler(
+        entry_points=[CommandHandler("timezone", cmd_timezone)],
+        states={
+            ASK_NEW_TIMEZONE: [MessageHandler(text_only, receive_new_timezone)],
+        },
+        fallbacks=[CommandHandler("cancel", cmd_cancel)],
+    )
 
 
 def setup_conv_handler() -> ConversationHandler:

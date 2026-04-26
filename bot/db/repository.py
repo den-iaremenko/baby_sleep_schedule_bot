@@ -92,11 +92,23 @@ async def end_session(
     return session
 
 
+async def update_utc_offset(db: AsyncSession, user_id: int, utc_offset: int) -> bool:
+    result = await db.execute(
+        select(BabyProfile).where(BabyProfile.telegram_user_id == user_id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        return False
+    profile.utc_offset = utc_offset
+    await db.commit()
+    return True
+
+
 async def get_sessions_for_day(
     db: AsyncSession,
     user_id: int,
     day: date,
-    utc_offset_minutes: int = 120,
+    utc_offset_minutes: int = 180,
 ) -> list[SleepSession]:
     tz = timezone(timedelta(minutes=utc_offset_minutes))
     local_start = datetime(day.year, day.month, day.day, tzinfo=tz)

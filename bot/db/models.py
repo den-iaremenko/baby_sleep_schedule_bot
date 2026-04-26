@@ -18,7 +18,7 @@ class BabyProfile(Base):
     wake_windows: Mapped[list[int]] = mapped_column(JSON, nullable=False)   # len = num_naps + 1
     nap_durations: Mapped[list[int]] = mapped_column(JSON, nullable=False)  # len = num_naps
     active_ratio: Mapped[float] = mapped_column(Float, default=0.70, nullable=False)
-    utc_offset: Mapped[int] = mapped_column(Integer, default=120, server_default="120", nullable=False)  # UTC+2 Kyiv
+    utc_offset: Mapped[int] = mapped_column(Integer, default=180, server_default="180", nullable=False)  # UTC+3
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -36,7 +36,7 @@ def _build_select_keyboard(action: str, num_naps: int) -> InlineKeyboardMarkup:
     ])
 
 
-def _local_now(utc_offset_minutes: int = 120) -> datetime:  # default UTC+2 Kyiv
+def _local_now(utc_offset_minutes: int = 180) -> datetime:
     return datetime.now(timezone(timedelta(minutes=utc_offset_minutes)))
 
 

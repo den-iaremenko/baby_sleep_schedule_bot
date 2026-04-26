@@ -49,7 +49,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     async with AsyncSessionLocal() as db:
         profile = await repository.get_baby_profile(db, user_id)
 
-    utc_offset = profile.utc_offset if profile else 120
+    utc_offset = profile.utc_offset if profile else 180
     name = profile.name if profile else "Baby"
 
     if target_day is None:

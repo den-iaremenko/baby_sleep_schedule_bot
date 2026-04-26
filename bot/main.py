@@ -8,7 +8,7 @@ from sqlalchemy import text
 from db.engine import engine
 from db.models import Base
 from handlers.schedule import schedule_conv_handler
-from handlers.setup import cmd_profile, setup_conv_handler
+from handlers.setup import cmd_profile, setup_conv_handler, timezone_conv_handler
 from handlers.sleep import sleep_handlers
 from handlers.stats import stats_handler
 from keyboards import MAIN_KEYBOARD
@@ -28,6 +28,7 @@ _COMMANDS = [
     BotCommand("slept",    "Record sleep start (optional HH:MM)"),
     BotCommand("woke",     "Record wake-up (optional HH:MM)"),
     BotCommand("stats",    "View sleep statistics (optional: DD.MM.YYYY)"),
+    BotCommand("timezone", "Update your timezone (UTC offset)"),
     BotCommand("cancel",   "Cancel current action"),
     BotCommand("start",    "Welcome message"),
 ]
@@ -37,7 +38,7 @@ async def post_init(app: Application) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text(
-            "ALTER TABLE baby_profiles ADD COLUMN IF NOT EXISTS utc_offset INTEGER NOT NULL DEFAULT 120"
+            "ALTER TABLE baby_profiles ADD COLUMN IF NOT EXISTS utc_offset INTEGER NOT NULL DEFAULT 180"
         ))
     await app.bot.set_my_commands(_COMMANDS, scope=BotCommandScopeAllPrivateChats())
     logger.info("Database tables ready, bot commands registered")
@@ -63,6 +64,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(schedule_conv_handler())
     app.add_handler(setup_conv_handler())
+    app.add_handler(timezone_conv_handler())
     app.add_handler(CommandHandler("profile", cmd_profile))
     app.add_handler(stats_handler())
     for handler in sleep_handlers():
