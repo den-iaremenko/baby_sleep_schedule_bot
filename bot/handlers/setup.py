@@ -6,12 +6,23 @@ from telegram.ext import CommandHandler, ConversationHandler, ContextTypes, Mess
 
 from db.engine import AsyncSessionLocal
 from db import repository
-from keyboards import MAIN_KEYBOARD
+from keyboards import BUTTON_FILTER, MAIN_KEYBOARD
 
 
 def _fmt_minutes(mins: int) -> str:
     h, m = divmod(mins, 60)
-    return f"{h}h {m:02d}m" if h and m else (f"{h}h" if h else f"{m}m")
+    return f"{h}г {m:02d}хв" if h and m else (f"{h}г" if h else f"{m}хв")
+
+
+def _plural_uk(n: int, one: str, few: str, many: str) -> str:
+    if 11 <= n % 100 <= 19:
+        return many
+    r = n % 10
+    if r == 1:
+        return one
+    if 2 <= r <= 4:
+        return few
+    return many
 
 
 def _age_str(dob: date) -> str:
@@ -21,77 +32,11 @@ def _age_str(dob: date) -> str:
         months -= 1
     if months < 1:
         days = (today - dob).days
-        return f"{days} day{'s' if days != 1 else ''}"
+        return f"{days} {_plural_uk(days, 'день', 'дні', 'днів')}"
     if months < 24:
-        return f"{months} month{'s' if months != 1 else ''}"
+        return f"{months} {_plural_uk(months, 'місяць', 'місяці', 'місяців')}"
     years = months // 12
-    return f"{years} year{'s' if years != 1 else ''}"
-
-
-def _fmt_offset(offset_minutes: int) -> str:
-    sign = "+" if offset_minutes >= 0 else "-"
-    h, m = divmod(abs(offset_minutes), 60)
-    return f"UTC{sign}{h}:{m:02d}" if m else f"UTC{sign}{h}"
-
-
-def _parse_utc_offset(text: str) -> int | None:
-    """Parse UTC offset to minutes. Accepts: +2, -5, +5:30, 2, 0."""
-    t = text.strip()
-    m = re.fullmatch(r"([+-]?)(\d{1,2}):(\d{2})", t)
-    if m:
-        sign = -1 if m.group(1) == "-" else 1
-        return sign * (int(m.group(2)) * 60 + int(m.group(3)))
-    m = re.fullmatch(r"([+-]?)(\d{1,2})", t)
-    if m:
-        sign = -1 if m.group(1) == "-" else 1
-        hours = int(m.group(2))
-        if hours > 14:
-            return None
-        return sign * hours * 60
-    return None
-
-
-async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    async with AsyncSessionLocal() as db:
-        profile = await repository.get_baby_profile(db, update.effective_user.id)
-
-    if not profile:
-        await update.message.reply_text(
-            "No profile found. Use /setup or tap ⚙️ Setup to create one.",
-            reply_markup=MAIN_KEYBOARD,
-        )
-        return
-
-    ww = profile.wake_windows
-    nd = profile.nap_durations
-    num_naps = len(nd)
-    age = _age_str(profile.date_of_birth)
-    active_pct = int(profile.active_ratio * 100)
-    chill_pct = 100 - active_pct
-
-    lines = [
-        f"👶 *{profile.name}'s Profile*",
-        "",
-        f"📅 Born: {profile.date_of_birth.strftime('%d.%m.%Y')} _{age}_",
-        f"🕐 Timezone: {_fmt_offset(profile.utc_offset)}",
-        f"😴 {num_naps} nap{'s' if num_naps != 1 else ''} per day",
-        "",
-    ]
-    for i in range(num_naps):
-        lines.append(f"Awake {_fmt_minutes(ww[i])} → Nap {i + 1} ({_fmt_minutes(nd[i])})")
-    lines.append(f"Awake {_fmt_minutes(ww[-1])} → 🌙 Night sleep")
-    lines += ["", f"⚡ Active / 😌 Wind-down split: {active_pct}% / {chill_pct}%"]
-
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode="Markdown",
-        reply_markup=MAIN_KEYBOARD,
-    )
-
-
-ASK_NAME, ASK_DOB, ASK_TIMEZONE, ASK_NUM_NAPS, ASK_WAKE_WINDOW, ASK_NAP_DURATION, ASK_NEW_TIMEZONE = range(7)
-
-_BUTTON_FILTER = filters.Regex(r"^(📅 Schedule|⚙️ Setup|😴 Slept|🌅 Woke up)$")
+    return f"{years} {_plural_uk(years, 'рік', 'роки', 'років')}"
 
 
 def _parse_duration(text: str) -> int | None:
@@ -120,9 +65,56 @@ def _parse_date(text: str) -> date | None:
     return None
 
 
+ASK_NAME, ASK_DOB, ASK_NUM_NAPS, ASK_WAKE_WINDOW, ASK_NAP_DURATION = range(5)
+
+
+
+async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async with AsyncSessionLocal() as db:
+        profile = await repository.get_baby_profile(db, update.effective_user.id)
+
+    if not profile:
+        await update.message.reply_text(
+            "Профіль не знайдено. Використайте /setup або натисніть ⚙️ Налаштування.",
+            reply_markup=MAIN_KEYBOARD,
+        )
+        return
+
+    ww = profile.wake_windows
+    nd = profile.nap_durations
+    num_naps = len(nd)
+    age = _age_str(profile.date_of_birth)
+    active_pct = int(profile.active_ratio * 100)
+    chill_pct = 100 - active_pct
+    nap_word = _plural_uk(num_naps, "сон", "сни", "снів")
+
+    lines = [
+        f"👶 *Профіль {profile.name}*",
+        "",
+        f"📅 Народження: {profile.date_of_birth.strftime('%d.%m.%Y')} _{age}_",
+        f"😴 {num_naps} {nap_word} на день",
+        "",
+        f"🔑 Baby ID: `{profile.id}`",
+        "_Поділіться цим ID щоб інший користувач міг підключитись через /link_",
+        "",
+    ]
+    for i in range(num_naps):
+        lines.append(f"Не спить {_fmt_minutes(ww[i])} → Сон {i + 1} ({_fmt_minutes(nd[i])})")
+    lines.append(f"Не спить {_fmt_minutes(ww[-1])} → 🌙 Нічний сон")
+    lines += ["", f"⚡ Активний / 😌 Заспокоєння: {active_pct}% / {chill_pct}%"]
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+
 async def cmd_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop("setup", None)
-    await update.message.reply_text("👶 Let's set up your baby's profile!\n\nWhat's the baby's name?")
+    await update.message.reply_text(
+        "👶 Давайте налаштуємо профіль вашої дитини!\n\nЯк звати дитину?"
+    )
     return ASK_NAME
 
 
@@ -130,7 +122,7 @@ async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     name = update.message.text.strip()
     context.user_data["setup"] = {"name": name, "wake_windows": [], "nap_durations": []}
     await update.message.reply_text(
-        f"When was *{name}* born?\nFormat: DD.MM.YYYY, e.g. `15.09.2024`",
+        f"Коли народився(-лась) *{name}*?\nФормат: ДД.ММ.РРРР, наприклад `15.09.2024`",
         parse_mode="Markdown",
     )
     return ASK_DOB
@@ -140,37 +132,15 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     dob = _parse_date(update.message.text)
     if not dob:
         await update.message.reply_text(
-            "Couldn't parse the date. Please use DD.MM.YYYY, e.g. `15.09.2024`",
+            "Не вдалося розпізнати дату. Використовуйте формат ДД.ММ.РРРР, наприклад `15.09.2024`",
             parse_mode="Markdown",
         )
         return ASK_DOB
 
-    context.user_data["setup"]["dob"] = dob.isoformat()
-    await update.message.reply_text(
-        "What's your UTC offset? Type `y` for default `+3`.\n"
-        "e.g. `+3`, `-5` (Eastern US), `+5:30` (India)",
-        parse_mode="Markdown",
-    )
-    return ASK_TIMEZONE
-
-
-async def receive_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = update.message.text.strip()
-    if text.lower() == "y":
-        offset = 180  # default: UTC+3
-    else:
-        offset = _parse_utc_offset(text)
-    if offset is None:
-        await update.message.reply_text(
-            "Couldn't parse that. Try `+3`, `-5`, or `+5:30`. Type `y` for default `+3`.",
-            parse_mode="Markdown",
-        )
-        return ASK_TIMEZONE
-
     setup = context.user_data["setup"]
-    setup["utc_offset"] = offset
+    setup["dob"] = dob.isoformat()
     await update.message.reply_text(
-        f"How many naps does *{setup['name']}* have per day?",
+        f"Скільки денних снів має *{setup['name']}*?",
         parse_mode="Markdown",
     )
     return ASK_NUM_NAPS
@@ -179,7 +149,7 @@ async def receive_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def receive_num_naps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
     if not text.isdigit() or not (1 <= int(text) <= 6):
-        await update.message.reply_text("Please enter a number between 1 and 6.")
+        await update.message.reply_text("Будь ласка, введіть число від 1 до 6.")
         return ASK_NUM_NAPS
 
     setup = context.user_data["setup"]
@@ -187,8 +157,8 @@ async def receive_num_naps(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     setup["current_nap"] = 1
 
     await update.message.reply_text(
-        f"How long is *{setup['name']}* awake before Nap 1?\n"
-        "e.g. `2h10m` or `130` (minutes). Type `y` for default `170m`.",
+        f"Скільки часу *{setup['name']}* не спить перед Сном 1?\n"
+        "Наприклад `2h10m` або `130` (хвилин). Введіть `y` для значення за замовчуванням `170хв`.",
         parse_mode="Markdown",
     )
     return ASK_WAKE_WINDOW
@@ -199,7 +169,7 @@ async def receive_wake_window(update: Update, context: ContextTypes.DEFAULT_TYPE
     mins = 170 if text.lower() == "y" else _parse_duration(text)
     if not mins or mins <= 0:
         await update.message.reply_text(
-            "Couldn't parse that. Try `2h10m`, `2h`, or `130`. Type `y` for default `170m`.",
+            "Не вдалося розпізнати. Спробуйте `2h10m`, `2h` або `130`. Введіть `y` для значення за замовчуванням `170хв`.",
             parse_mode="Markdown",
         )
         return ASK_WAKE_WINDOW
@@ -212,8 +182,8 @@ async def receive_wake_window(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if len(setup["wake_windows"]) <= num_naps:
         await update.message.reply_text(
-            f"How long is *{name}'s* Nap {current_nap}?\n"
-            "e.g. `1h` or `60` (minutes). Type `y` for default `60m`.",
+            f"Скільки триває Сон {current_nap} у *{name}*?\n"
+            "Наприклад `1h` або `60` (хвилин). Введіть `y` для значення за замовчуванням `60хв`.",
             parse_mode="Markdown",
         )
         return ASK_NAP_DURATION
@@ -226,7 +196,7 @@ async def receive_nap_duration(update: Update, context: ContextTypes.DEFAULT_TYP
     mins = 60 if text.lower() == "y" else _parse_duration(text)
     if not mins or mins <= 0:
         await update.message.reply_text(
-            "Couldn't parse that. Try `1h` or `60`. Type `y` for default `60m`.",
+            "Не вдалося розпізнати. Спробуйте `1h` або `60`. Введіть `y` для значення за замовчуванням `60хв`.",
             parse_mode="Markdown",
         )
         return ASK_NAP_DURATION
@@ -239,12 +209,12 @@ async def receive_nap_duration(update: Update, context: ContextTypes.DEFAULT_TYP
     name = setup["name"]
 
     prompt = (
-        f"How long is *{name}* awake before Nap {current_nap}?"
+        f"Скільки часу *{name}* не спить перед Сном {current_nap}?"
         if current_nap <= num_naps
-        else f"How long is *{name}* awake before night sleep?"
+        else f"Скільки часу *{name}* не спить перед нічним сном?"
     )
     await update.message.reply_text(
-        f"{prompt}\ne.g. `2h50m` or `170` (minutes). Type `y` for default `170m`.",
+        f"{prompt}\nНаприклад `2h50m` або `170` (хвилин). Введіть `y` для значення за замовчуванням `170хв`.",
         parse_mode="Markdown",
     )
     return ASK_WAKE_WINDOW
@@ -262,20 +232,18 @@ async def _finish_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             date_of_birth=dob,
             wake_windows=setup["wake_windows"],
             nap_durations=setup["nap_durations"],
-            utc_offset=setup.get("utc_offset", 0),
         )
 
     ww = profile.wake_windows
     nd = profile.nap_durations
     num_naps = len(nd)
 
-    lines = [f"✅ *{profile.name}'s profile saved!*", ""]
+    lines = [f"✅ *Профіль {profile.name} збережено!*", ""]
     for i in range(num_naps):
-        lines.append(f"Awake {_fmt_minutes(ww[i])} → Nap {i + 1} ({_fmt_minutes(nd[i])})")
-    lines.append(f"Awake {_fmt_minutes(ww[-1])} → 🌙 Night sleep")
-    lines += ["", f"🕐 Timezone: {_fmt_offset(profile.utc_offset)}"]
+        lines.append(f"Не спить {_fmt_minutes(ww[i])} → Сон {i + 1} ({_fmt_minutes(nd[i])})")
+    lines.append(f"Не спить {_fmt_minutes(ww[-1])} → 🌙 Нічний сон")
     lines.append("")
-    lines.append("Use /schedule to generate today's schedule.")
+    lines.append("Використайте /schedule для генерації розкладу на сьогодні.")
 
     await update.message.reply_text(
         "\n".join(lines),
@@ -287,59 +255,8 @@ async def _finish_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop("setup", None)
-    await update.message.reply_text("Setup cancelled.", reply_markup=MAIN_KEYBOARD)
+    await update.message.reply_text("Налаштування скасовано.", reply_markup=MAIN_KEYBOARD)
     return ConversationHandler.END
-
-
-async def cmd_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    async with AsyncSessionLocal() as db:
-        profile = await repository.get_baby_profile(db, update.effective_user.id)
-
-    current = f" Current: {_fmt_offset(profile.utc_offset)}." if profile else ""
-    await update.message.reply_text(
-        f"Enter your UTC offset.{current}\n"
-        "e.g. `+3`, `-5`, `+5:30`. Type `y` for default `+3`.",
-        parse_mode="Markdown",
-    )
-    return ASK_NEW_TIMEZONE
-
-
-async def receive_new_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = update.message.text.strip()
-    offset = 180 if text.lower() == "y" else _parse_utc_offset(text)
-    if offset is None:
-        await update.message.reply_text(
-            "Couldn't parse that. Try `+3`, `-5`, or `+5:30`. Type `y` for default `+3`.",
-            parse_mode="Markdown",
-        )
-        return ASK_NEW_TIMEZONE
-
-    async with AsyncSessionLocal() as db:
-        saved = await repository.update_utc_offset(db, update.effective_user.id, offset)
-
-    if saved:
-        await update.message.reply_text(
-            f"✅ Timezone updated to *{_fmt_offset(offset)}*.",
-            parse_mode="Markdown",
-            reply_markup=MAIN_KEYBOARD,
-        )
-    else:
-        await update.message.reply_text(
-            "No profile found. Use /setup to create one first.",
-            reply_markup=MAIN_KEYBOARD,
-        )
-    return ConversationHandler.END
-
-
-def timezone_conv_handler() -> ConversationHandler:
-    text_only = filters.TEXT & ~filters.COMMAND & ~_BUTTON_FILTER
-    return ConversationHandler(
-        entry_points=[CommandHandler("timezone", cmd_timezone)],
-        states={
-            ASK_NEW_TIMEZONE: [MessageHandler(text_only, receive_new_timezone)],
-        },
-        fallbacks=[CommandHandler("cancel", cmd_cancel)],
-    )
 
 
 def setup_conv_handler() -> ConversationHandler:
@@ -347,12 +264,11 @@ def setup_conv_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("setup", cmd_setup),
-            MessageHandler(filters.Regex("^⚙️ Setup$"), cmd_setup),
+            MessageHandler(filters.Regex("^⚙️ Налаштування$"), cmd_setup),
         ],
         states={
             ASK_NAME:         [MessageHandler(text_only, receive_name)],
             ASK_DOB:          [MessageHandler(text_only, receive_dob)],
-            ASK_TIMEZONE:     [MessageHandler(text_only, receive_timezone)],
             ASK_NUM_NAPS:     [MessageHandler(text_only, receive_num_naps)],
             ASK_WAKE_WINDOW:  [MessageHandler(text_only, receive_wake_window)],
             ASK_NAP_DURATION: [MessageHandler(text_only, receive_nap_duration)],

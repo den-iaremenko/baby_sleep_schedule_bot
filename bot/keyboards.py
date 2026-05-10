@@ -1,25 +1,22 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram.ext import filters
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
-        [KeyboardButton("📅 Schedule"), KeyboardButton("⚙️ Setup")],
-        [KeyboardButton("😴 Slept"),    KeyboardButton("🌅 Woke up")],
+        [KeyboardButton("📅 Розклад"), KeyboardButton("☀️ Ранковий підйом")],
+        [KeyboardButton("😴 Спить"), KeyboardButton("🌅 Прокинувся")],
+        [KeyboardButton("⚙️ Налаштування")],
     ],
     resize_keyboard=True,
 )
 
+SLEEP_ACTIONS_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("😴 Спить", callback_data="sleep:start"),
+    InlineKeyboardButton("🌅 Прокинувся", callback_data="sleep:end"),
+]])
 
-def build_sleep_keyboard(from_nap: int, total_naps: int) -> InlineKeyboardMarkup:
-    """Inline keyboard with start/end buttons for naps from_nap..total_naps plus night sleep."""
-    rows = [
-        [
-            InlineKeyboardButton(f"😴 Nap {i} start", callback_data=f"sleep_start:nap_{i}"),
-            InlineKeyboardButton(f"🌅 Nap {i} end",   callback_data=f"sleep_end:nap_{i}"),
-        ]
-        for i in range(from_nap, total_naps + 1)
-    ]
-    rows.append([
-        InlineKeyboardButton("🌙 Night sleep start", callback_data="sleep_start:night"),
-        InlineKeyboardButton("🌅 Night sleep end",   callback_data="sleep_end:night"),
-    ])
-    return InlineKeyboardMarkup(rows)
+# Matches every reply-keyboard button — used by conversation handlers as a fallback
+# filter so that pressing a menu button never gets swallowed by an open conversation.
+BUTTON_FILTER = filters.Regex(
+    r"^(📅 Розклад|⚙️ Налаштування|☀️ Ранковий підйом|😴 Спить|🌅 Прокинувся)$"
+)

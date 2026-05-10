@@ -8,5 +8,6 @@ dependencies = [
     "pydantic>=2.13.3",
     "pydantic-settings>=2.14.0",
     "python-telegram-bot>=21.0",
+    "pytz>=2026.2",
     "sqlalchemy[asyncio]>=2.0.49",
 ]

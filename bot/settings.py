@@ -1,5 +1,9 @@
+import pytz
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+KYIV_TZ = pytz.timezone("Europe/Kyiv")
 
 
 class Settings(BaseSettings):
