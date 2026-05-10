@@ -70,7 +70,7 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 def link_conv_handler() -> ConversationHandler:
-    text_only = filters.TEXT & ~filters.COMMAND & ~_BUTTON_FILTER
+    text_only = filters.TEXT & ~filters.COMMAND & ~BUTTON_FILTER
     return ConversationHandler(
         entry_points=[CommandHandler("link", cmd_link)],
         states={
