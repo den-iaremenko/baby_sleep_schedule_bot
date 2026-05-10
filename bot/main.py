@@ -1,7 +1,7 @@
 import logging
 
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from db.engine import engine
 from db.models import Base
