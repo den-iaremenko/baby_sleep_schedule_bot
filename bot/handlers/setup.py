@@ -227,7 +227,7 @@ async def _finish_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     async with AsyncSessionLocal() as db:
         profile = await repository.save_baby_profile(
             db,
-            user_id=update.effective_user.id,
+            telegram_user_id=update.effective_user.id,
             name=setup["name"],
             date_of_birth=dob,
             wake_windows=setup["wake_windows"],
